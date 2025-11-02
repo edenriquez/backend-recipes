@@ -30,27 +30,49 @@ def create(
     import re
     from datetime import datetime
     
-    # Validate project name
-    if not re.match(r'^[a-zA-Z][a-zA-Z0-9_-]*$', project_name):
-        console.print(
-            "❌ Error: Project name must be a valid Python identifier",
-            style="bold red"
-        )
-        raise typer.Exit(1)
+    # Skip validation if using current directory
+    if project_name != ".":
+        # Validate project name for non-current directory cases
+        if not re.match(r'^[a-zA-Z][a-zA-Z0-9_-]*$', project_name):
+            console.print(
+                "❌ Error: Project name must be a valid Python identifier (letters, numbers, underscores, or hyphens, starting with a letter)",
+                style="bold red"
+            )
+            raise typer.Exit(1)
     
     # Set up paths
     template_dir = Path(__file__).parent / "templates" / "base"
-    project_dir = output_dir / project_name
     
-    # Check if output directory exists and is empty
-    if project_dir.exists():
-        if any(project_dir.iterdir()):
+    # Handle output directory
+    if str(output_dir) == "." and project_name == ".":
+        # Special case: fastapi-gen create .
+        project_dir = Path(".")
+        if any(Path('.').iterdir()):
+            console.print(
+                "⚠️  Warning: Current directory is not empty. Some files may be overwritten.",
+                style="bold yellow"
+            )
+    elif str(output_dir) == ".":
+        # fastapi-gen create myproject
+        project_dir = Path(project_name)
+        if project_dir.exists() and any(project_dir.iterdir()):
+            console.print(
+                f"❌ Error: Directory '{project_dir}' already exists and is not empty",
+                style="bold red"
+            )
+            raise typer.Exit(1)
+    else:
+        # fastapi-gen create myproject --output /some/path
+        project_dir = output_dir / project_name
+        output_dir.mkdir(parents=True, exist_ok=True)
+        if project_dir.exists() and any(project_dir.iterdir()):
             console.print(
                 f"❌ Error: Directory '{project_dir}' already exists and is not empty",
                 style="bold red"
             )
             raise typer.Exit(1)
     
+    console.print(f"Project will be created in: {project_dir.absolute()}")
     console.print(f"\n🚀 Creating new FastAPI project: {project_name}", style="bold green")
     
     try:
@@ -108,7 +130,8 @@ def create(
         
         # Show next steps
         console.print("\nNext steps:", style="bold")
-        console.print(f"  cd {project_dir}/src")
+        if str(project_dir) != ".":
+            console.print(f"  cd {project_dir}")
         console.print("  python -m venv venv")
         console.print("  source venv/bin/activate  # On Windows: .\\venv\\Scripts\\activate")
         console.print("  pip install -e \".[dev]\"")
