@@ -62,13 +62,19 @@ def create(
         
         # Process each file in the template
         for item in template_dir.rglob('*'):
-            if item.is_file():
-                # Get relative path and create destination path
+            if item.is_file() and item.name != '.DS_Store':  # Skip system files
+                # Get relative path from template directory
                 rel_path = item.relative_to(template_dir)
                 
-                # Convert path to string and replace project_name in path
-                rel_path_str = str(rel_path).replace('{{project_name}}', project_name)
-                dest_path = project_dir / rel_path_str
+                # Skip __pycache__ and other Python cache directories
+                if '__pycache__' in rel_path.parts:
+                    continue
+                
+                # For files in src/, we want to keep them directly in the project root
+                dest_rel_path = rel_path
+                
+                # Create destination path
+                dest_path = project_dir / dest_rel_path
                 
                 # Create parent directories if they don't exist
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,14 +88,14 @@ def create(
                 # For .j2 templates, remove the extension
                 if item.suffix == '.j2':
                     dest_path = dest_path.with_suffix('')  # Remove .j2 extension
-                    
+                
                 # Write the processed content
                 dest_path.write_text(content)
                 
                 # Show user-friendly path in output
-                display_path = rel_path_str
+                display_path = str(dest_rel_path)
                 if item.suffix == '.j2':
-                    display_path = str(rel_path_str).replace('.j2', '')
+                    display_path = str(dest_rel_path).replace('.j2', '')
                 console.print(f"  ✓ Created: {display_path}")
         
         # Create .env file from example
@@ -102,11 +108,11 @@ def create(
         
         # Show next steps
         console.print("\nNext steps:", style="bold")
-        console.print(f"  cd {project_dir}")
+        console.print(f"  cd {project_dir}/src")
         console.print("  python -m venv venv")
         console.print("  source venv/bin/activate  # On Windows: .\\venv\\Scripts\\activate")
         console.print("  pip install -e \".[dev]\"")
-        console.print("  uvicorn {}.main:app --reload".format(project_name.replace('-', '_')))
+        console.print("  uvicorn main:app --reload")
         console.print("\nHappy coding! 🚀")
         
     except Exception as e:
