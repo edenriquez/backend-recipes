@@ -82,6 +82,12 @@ def create(
         # Copy template files
         console.print("\n📁 Copying project files...")
         
+        # Create a requirements.txt if it doesn't exist
+        requirements_path = project_dir / "requirements.txt"
+        if not requirements_path.exists():
+            with open(requirements_path, 'w') as f:
+                f.write("fastapi>=0.68.0\nuvicorn>=0.15.0\npython-multipart\npython-jose[cryptography]\npasslib[bcrypt]\npython-dotenv")
+        
         # Process each file in the template
         for item in template_dir.rglob('*'):
             if item.is_file() and item.name != '.DS_Store':  # Skip system files
@@ -129,14 +135,16 @@ def create(
         console.print("\n✅ Project created successfully!", style="bold green")
         
         # Show next steps
-        console.print("\nNext steps:", style="bold")
-        if str(project_dir) != ".":
-            console.print(f"  cd {project_dir}")
-        console.print("  python -m venv venv")
-        console.print("  source venv/bin/activate  # On Windows: .\\venv\\Scripts\\activate")
-        console.print("  pip install -e \".[dev]\"")
-        console.print("  uvicorn main:app --reload")
-        console.print("\nHappy coding! 🚀")
+        console.print("\nNext steps:")
+        console.print(f"  cd {project_dir}")
+        console.print("  pip install -r requirements.txt")
+        console.print("  uvicorn src.index:app --reload\n")
+        
+        # Vercel deployment instructions
+        console.print("\n🚀 Vercel Deployment:")
+        console.print("  1. Make sure you have Vercel CLI installed: npm install -g vercel")
+        console.print("  2. Run: vercel")
+        console.print("  3. Follow the prompts to deploy your FastAPI application\n")
         
     except Exception as e:
         # Clean up in case of error
