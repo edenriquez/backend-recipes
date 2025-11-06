@@ -5,7 +5,7 @@ import json
 import shutil
 import sys
 
-from ..utils import console, process_template_files
+from ..utils import console, process_template_files, load_config, save_config
 
 # Get the template directory
 try:
@@ -100,6 +100,15 @@ tests/
     console.print("2. Run: vercel")
     console.print("3. Follow the prompts to deploy your application\n")
 
+    # Update fastapi-gen.json
+    config_path = project_dir / "fastapi-gen.json"
+    config = load_config(config_path)
+    services = config.get("services", [])
+    if "vercel" not in services:
+        services.append("vercel")
+        config["services"] = services
+        save_config(config_path, config)
+
 def remove_vercel(project_dir: Path) -> None:
     """Remove Vercel configuration from the project.
     
@@ -130,5 +139,14 @@ def remove_vercel(project_dir: Path) -> None:
             for line in lines:
                 if "# Vercel specific" not in line and "python-multipart" not in line:
                     f.write(line)
+
+    # Update fastapi-gen.json
+    config_path = project_dir / "fastapi-gen.json"
+    config = load_config(config_path)
+    services = config.get("services", [])
+    if "vercel" in services:
+        services.remove("vercel")
+        config["services"] = services
+        save_config(config_path, config)
     
     console.print("✅ Vercel configuration removed successfully!", style="bold green")
