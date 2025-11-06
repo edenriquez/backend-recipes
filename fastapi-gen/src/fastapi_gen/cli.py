@@ -16,7 +16,12 @@ from .utils import (
 )
 
 # Import services
-from .services import setup_vercel, remove_vercel
+from .services import (
+    setup_vercel,
+    remove_vercel,
+    setup_google_oauth,
+    remove_google_oauth
+)
 
 # Define available services and their handlers
 SERVICES = {
@@ -24,6 +29,11 @@ SERVICES = {
         "setup": setup_vercel,
         "remove": remove_vercel,
         "description": "Vercel deployment configuration"
+    },
+    "google_oauth": {
+        "setup": setup_google_oauth,
+        "remove": remove_google_oauth,
+        "description": "Google OAuth integration"
     },
     # Add more services here
 }
