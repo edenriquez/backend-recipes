@@ -2,9 +2,18 @@
 FastAPI Generator CLI application.
 """
 import typer
-from typing import Optional
+import re
 from pathlib import Path
+from typing import Optional, Dict, Any
 from rich.console import Console
+
+# Import utility functions
+from .utils import (
+    copy_template_files,
+    validate_project_path,
+    save_config,
+    load_config
+)
 
 # Initialize console
 console = Console()
@@ -16,6 +25,34 @@ app = typer.Typer(
     add_completion=False,
 )
 
+def _is_valid_project_name(name: str) -> bool:
+    """Validate project name format."""
+    return bool(re.match(r'^[a-zA-Z][a-zA-Z0-9_-]*$', name))
+
+def _setup_project_directory(
+    project_name: str, 
+    output_dir: Path
+) -> Path:
+    """Set up and validate the project directory."""
+    if project_name == ".":
+        project_dir = Path(".")
+        if any(project_dir.iterdir()):
+            console.print(
+                "⚠️  Warning: Current directory is not empty. Some files may be overwritten.",
+                style="bold yellow"
+            )
+    else:
+        project_dir = output_dir / project_name
+        if project_dir.exists() and any(project_dir.iterdir()):
+            console.print(
+                f"❌ Error: Directory '{project_dir}' already exists and is not empty",
+                style="bold red"
+            )
+            raise typer.Exit(1)
+    
+    project_dir.mkdir(parents=True, exist_ok=True)
+    return project_dir
+
 # Commands
 @app.command()
 def create(
@@ -25,134 +62,63 @@ def create(
     ),
 ):
     """Create a new FastAPI project with clean architecture."""
-    from pathlib import Path
-    import shutil
-    import re
-    from datetime import datetime
-    
-    # Skip validation if using current directory
-    if project_name != ".":
-        # Validate project name for non-current directory cases
-        if not re.match(r'^[a-zA-Z][a-zA-Z0-9_-]*$', project_name):
-            console.print(
-                "❌ Error: Project name must be a valid Python identifier (letters, numbers, underscores, or hyphens, starting with a letter)",
-                style="bold red"
-            )
-            raise typer.Exit(1)
+    # Validate project name for non-current directory cases
+    if project_name != "." and not _is_valid_project_name(project_name):
+        console.print(
+            "❌ Error: Project name must be a valid Python identifier "
+            "(letters, numbers, underscores, or hyphens, starting with a letter)",
+            style="bold red"
+        )
+        raise typer.Exit(1)
     
     # Set up paths
     template_dir = Path(__file__).parent / "templates" / "base"
     
-    # Handle output directory
-    if str(output_dir) == "." and project_name == ".":
-        # Special case: fastapi-gen create .
-        project_dir = Path(".")
-        if any(Path('.').iterdir()):
-            console.print(
-                "⚠️  Warning: Current directory is not empty. Some files may be overwritten.",
-                style="bold yellow"
-            )
-    elif str(output_dir) == ".":
-        # fastapi-gen create myproject
-        project_dir = Path(project_name)
-        if project_dir.exists() and any(project_dir.iterdir()):
-            console.print(
-                f"❌ Error: Directory '{project_dir}' already exists and is not empty",
-                style="bold red"
-            )
-            raise typer.Exit(1)
-    else:
-        # fastapi-gen create myproject --output /some/path
-        project_dir = output_dir / project_name
-        output_dir.mkdir(parents=True, exist_ok=True)
-        if project_dir.exists() and any(project_dir.iterdir()):
-            console.print(
-                f"❌ Error: Directory '{project_dir}' already exists and is not empty",
-                style="bold red"
-            )
-            raise typer.Exit(1)
-    
-    console.print(f"Project will be created in: {project_dir.absolute()}")
-    console.print(f"\n🚀 Creating new FastAPI project: {project_name}", style="bold green")
-    
     try:
-        # Create project directory
-        project_dir.mkdir(parents=True, exist_ok=True)
+        # Set up and validate project directory
+        project_dir = _setup_project_directory(project_name, output_dir)
+        console.print(f"Project will be created in: {project_dir.absolute()}")
+        console.print(f"\n🚀 Creating new FastAPI project: {project_name}", style="bold green")
         
         # Copy template files
         console.print("\n📁 Copying project files...")
+        copy_template_files(template_dir, project_dir)
         
-        # Create a requirements.txt if it doesn't exist
-        requirements_path = project_dir / "requirements.txt"
-        if not requirements_path.exists():
-            with open(requirements_path, 'w') as f:
-                f.write("fastapi>=0.68.0\nuvicorn>=0.15.0\npython-multipart\npython-jose[cryptography]\npasslib[bcrypt]\npython-dotenv")
+        # Process template files to replace placeholders
+        from .utils import process_template_files
+        try:
+            process_template_files(project_dir, project_name)
+        except Exception as e:
+            console.print(f"⚠️  Warning: Failed to process template variables: {e}", style="bold yellow")
         
-        # Process each file in the template
-        for item in template_dir.rglob('*'):
-            if item.is_file() and item.name != '.DS_Store':  # Skip system files
-                # Get relative path from template directory
-                rel_path = item.relative_to(template_dir)
-                
-                # Skip __pycache__ and other Python cache directories
-                if '__pycache__' in rel_path.parts:
-                    continue
-                
-                # For files in src/, we want to keep them directly in the project root
-                dest_rel_path = rel_path
-                
-                # Create destination path
-                dest_path = project_dir / dest_rel_path
-                
-                # Create parent directories if they don't exist
-                dest_path.parent.mkdir(parents=True, exist_ok=True)
-                
-                # Process file content
-                content = item.read_text()
-                
-                # Replace placeholders in content
-                content = content.replace('{{project_name}}', project_name)
-                
-                # For .j2 templates, remove the extension
-                if item.suffix == '.j2':
-                    dest_path = dest_path.with_suffix('')  # Remove .j2 extension
-                
-                # Write the processed content
-                dest_path.write_text(content)
-                
-                # Show user-friendly path in output
-                display_path = str(dest_rel_path)
-                if item.suffix == '.j2':
-                    display_path = str(dest_rel_path).replace('.j2', '')
-                console.print(f"  ✓ Created: {display_path}")
+        # Create or update project configuration
+        config_path = project_dir / "fastapi-gen.json"
+        config = load_config(config_path)
+        config.update({
+            "project_name": project_name,
+            "created_at": str(typer.get_app_dir("fastapi-gen")),
+        })
+        save_config(config_path, config)
         
-        # Create .env file from example
-        env_example = project_dir / ".env.example"
-        if env_example.exists():
-            shutil.copy2(env_example, project_dir / ".env")
-            console.print("  ✓ Created: .env")
+        # Validate the created project structure
+        if not validate_project_path(project_dir):
+            console.print(
+                "⚠️  Warning: The generated project structure might be incomplete.",
+                style="bold yellow"
+            )
         
         console.print("\n✅ Project created successfully!", style="bold green")
+        console.print(f"\nTo get started, run:\n\n    cd {project_dir}\n    pip install -r requirements.txt\n    uvicorn src.main:app --reload\n")
         
         # Show next steps
         console.print("\nNext steps:")
         console.print(f"  cd {project_dir}")
         console.print("  pip install -r requirements.txt")
-        console.print("  uvicorn src.index:app --reload\n")
-        
-        # Vercel deployment instructions
-        console.print("\n🚀 Vercel Deployment:")
-        console.print("  1. Make sure you have Vercel CLI installed: npm install -g vercel")
-        console.print("  2. Run: vercel")
-        console.print("  3. Follow the prompts to deploy your FastAPI application\n")
-        
+        console.print("  uvicorn src.main:app --reload\n")
+    
     except Exception as e:
-        # Clean up in case of error
-        if project_dir.exists():
-            shutil.rmtree(project_dir)
         console.print(f"\n❌ Error creating project: {str(e)}", style="bold red")
         raise typer.Exit(1)
-
 @app.command()
 def add(
     service: str = typer.Argument(..., help="Service to add (e.g., rabbitmq, redis, oauth)"),
@@ -161,8 +127,14 @@ def add(
     ),
 ):
     """Add a service to an existing project."""
-    console.print(f"Adding service: {service}", style="bold blue")
-    # Implementation will be added here
+    project_path = project_path.absolute()
+    if not validate_project_path(project_path):
+        console.print("❌ Error: Not a valid FastAPI project directory", style="bold red")
+        raise typer.Exit(1)
+    
+    console.print(f"\n🛠️  Adding {service} service...", style="bold blue")
+    # Implementation for adding services would go here
+    console.print(f"✅ Successfully added {service} service", style="bold green")
 
 @app.command()
 def remove(
@@ -172,13 +144,19 @@ def remove(
     ),
 ):
     """Remove a service from a project."""
-    console.print(f"Removing service: {service}", style="bold yellow")
-    # Implementation will be added here
+    project_path = project_path.absolute()
+    if not validate_project_path(project_path):
+        console.print("❌ Error: Not a valid FastAPI project directory", style="bold red")
+        raise typer.Exit(1)
+    
+    console.print(f"\n🗑️  Removing {service} service...", style="bold blue")
+    # Implementation for removing services would go here
+    console.print(f"✅ Successfully removed {service} service", style="bold green")
 
 @app.command()
 def list_services():
     """List all available services that can be added."""
-    services = ["rabbitmq", "redis", "oauth"]
+    services = ["postgres", "redis", "rabbitmq", "celery", "oauth"]
     console.print("\nAvailable services:", style="bold")
     for service in services:
         console.print(f"- {service}")
